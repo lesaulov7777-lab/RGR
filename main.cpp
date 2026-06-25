@@ -1,12 +1,12 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <sstream>
 
-#include "base64_utils.h"
+#include "hex_utils.h"
 #include "file_manager.h"
 #include "plugin_manager.h"
 
@@ -85,18 +85,17 @@ int ReadInt() {
     std::string line;
     std::getline(std::cin, line);
 
-    std::stringstream ss(line);
+    std::stringstream stream(line);
+    int value = 0;
+    char extra = '\0';
 
-    int value;
-    char extra;
-
-    if (!(ss >> value)) {
-        std::cout << "Ошибка: нужно ввести число." << std::endl;
+    if (!(stream >> value)) {
+        std::cout << "[ОШИБКА] Нужно ввести число.\n";
         return -1;
     }
 
-    if (ss >> extra) {
-        std::cout << "Ошибка: после числа не должно быть символов." << std::endl;
+    if (stream >> extra) {
+        std::cout << "[ОШИБКА] После числа не должно быть символов.\n";
         return -1;
     }
 
@@ -169,7 +168,7 @@ std::string GetKeyMessage(const Plugin* plugin, bool encryptMode) {
     }
 
     if (IsOtpAlgorithm(plugin)) {
-        return "Введите ключ OTP (Base64): ";
+        return "Введите ключ OTP (HEX): ";
     }
 
     if (plugin != nullptr && Contains(plugin->name, "Хилла")) {
@@ -185,7 +184,7 @@ std::string GetKeyMessage(const Plugin* plugin, bool encryptMode) {
 
 std::string PrepareKey(const Plugin* plugin, const std::string& inputKey) {
     if (IsOtpAlgorithm(plugin)) {
-        return BytesToString(Base64ToBytes(inputKey));
+        return BytesToString(HexToBytes(inputKey));
     }
 
     return inputKey;
@@ -199,7 +198,7 @@ void PrintGeneratedKeys(const Plugin* plugin, const std::string& publicKey, cons
 
     if (publicKey == privateKey) {
         if (IsOtpAlgorithm(plugin)) {
-            std::cout << "Ключ OTP (Base64): " << publicKey << '\n';
+            std::cout << "Ключ OTP (HEX): " << publicKey << '\n';
             std::cout << "Важно: ключ OTP должен быть не короче текста или файла.\n";
         } else {
             std::cout << "Ключ: " << publicKey << '\n';
@@ -259,7 +258,7 @@ void EncryptText(std::vector<Plugin>& plugins, int currentPluginIndex) {
     std::string visibleCipherText;
 
     if (NeedsTextEncoding(plugin)) {
-        visibleCipherText = BytesToBase64(encrypted);
+        visibleCipherText = BytesToHex(encrypted);
     } else {
         visibleCipherText = BytesToString(encrypted);
     }
@@ -277,7 +276,7 @@ void DecryptText(std::vector<Plugin>& plugins, int currentPluginIndex) {
     std::vector<uint8_t> encrypted;
 
     if (NeedsTextEncoding(plugin)) {
-        encrypted = Base64ToBytes(cipherText);
+        encrypted = HexToBytes(cipherText);
     } else {
         encrypted = StringToBytes(cipherText);
     }
