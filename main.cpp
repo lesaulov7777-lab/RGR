@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <sstream>
 
 #include "base64_utils.h"
 #include "file_manager.h"
@@ -46,11 +47,11 @@ bool Contains(const std::string& text, const std::string& part) {
 }
 
 bool IsOtpAlgorithm(const Plugin* plugin) {
-    return plugin != nullptr && Contains(plugin->name(), "OTP");
+    return plugin != nullptr && Contains(plugin->name, "OTP");
 }
 
 bool IsElGamalAlgorithm(const Plugin* plugin) {
-    return plugin != nullptr && Contains(plugin->name(), "Эль-Гамаль");
+    return plugin != nullptr && Contains(plugin->name, "Эль-Гамаль");
 }
 
 bool NeedsTextEncoding(const Plugin* plugin) {
@@ -58,10 +59,10 @@ bool NeedsTextEncoding(const Plugin* plugin) {
         return false;
     }
 
-    return Contains(plugin->name(), "RC4") ||
-           Contains(plugin->name(), "XTEA") ||
-           Contains(plugin->name(), "OTP") ||
-           Contains(plugin->name(), "Хилла");
+    return Contains(plugin->name, "RC4") ||
+           Contains(plugin->name, "XTEA") ||
+           Contains(plugin->name, "OTP") ||
+           Contains(plugin->name, "Хилла");
 }
 
 std::vector<uint8_t> StringToBytes(const std::string& text) {
@@ -81,15 +82,24 @@ std::string ReadLine(const std::string& message) {
 }
 
 int ReadInt() {
-    int value = 0;
+    std::string line;
+    std::getline(std::cin, line);
 
-    if (!(std::cin >> value)) {
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    std::stringstream ss(line);
+
+    int value;
+    char extra;
+
+    if (!(ss >> value)) {
+        std::cout << "Ошибка: нужно ввести число." << std::endl;
         return -1;
     }
 
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    if (ss >> extra) {
+        std::cout << "Ошибка: после числа не должно быть символов." << std::endl;
+        return -1;
+    }
+
     return value;
 }
 
@@ -126,7 +136,7 @@ void PrintMenu(const Plugin* currentPlugin) {
     if (currentPlugin == nullptr) {
         std::cout << "Текущий алгоритм: не выбран\n";
     } else {
-        std::cout << "Текущий алгоритм: " << currentPlugin->name() << '\n';
+        std::cout << "Текущий алгоритм: " << currentPlugin->name << '\n';
     }
 
     std::cout << "1. Выбрать алгоритм\n";
@@ -139,8 +149,8 @@ void PrintMenu(const Plugin* currentPlugin) {
     std::cout << "Ваш выбор: ";
 }
 
-Plugin* RequireCurrentPlugin(PluginManager& pluginManager) {
-    Plugin* plugin = pluginManager.currentPlugin();
+Plugin* RequireCurrentPlugin(std::vector<Plugin>& plugins, int currentPluginIndex) {
+    Plugin* plugin = GetCurrentPlugin(plugins, currentPluginIndex);
 
     if (plugin == nullptr) {
         throw std::runtime_error("Сначала выберите алгоритм");
@@ -162,11 +172,11 @@ std::string GetKeyMessage(const Plugin* plugin, bool encryptMode) {
         return "Введите ключ OTP (Base64): ";
     }
 
-    if (plugin != nullptr && Contains(plugin->name(), "Хилла")) {
+    if (plugin != nullptr && Contains(plugin->name, "Хилла")) {
         return "Введите ключ Хилла (4 числа, пример: 3 3 2 5): ";
     }
 
-    if (plugin != nullptr && Contains(plugin->name(), "XTEA")) {
+    if (plugin != nullptr && Contains(plugin->name, "XTEA")) {
         return "Введите ключ XTEA (16 символов): ";
     }
 
@@ -208,43 +218,43 @@ void PrintGeneratedKeys(const Plugin* plugin, const std::string& publicKey, cons
     std::cout << "Ключ расшифрования: " << privateKey << '\n';
 }
 
-void SelectAlgorithm(PluginManager& pluginManager) {
-    pluginManager.printAvailablePlugins();
+void SelectAlgorithm(std::vector<Plugin>& plugins, int& currentPluginIndex) {
+    PrintAvailablePlugins(plugins);
 
-    if (pluginManager.empty()) {
+    if (!HasPlugins(plugins)) {
         return;
     }
 
     std::cout << "Выберите номер: ";
     int index = ReadInt();
 
-    if (index < 1 || !pluginManager.selectPlugin(static_cast<std::size_t>(index))) {
+    if (index < 1 || !SelectPlugin(plugins, currentPluginIndex, static_cast<std::size_t>(index))) {
         std::cout << "[ОШИБКА] Неверный номер алгоритма.\n";
         return;
     }
 
-    std::cout << "[УСПЕШНО] Выбран алгоритм: "
-              << pluginManager.currentPlugin()->name() << '\n';
+    const Plugin* currentPlugin = GetCurrentPlugin(plugins, currentPluginIndex);
+    std::cout << "[УСПЕШНО] Выбран алгоритм: " << currentPlugin->name << '\n';
 }
 
-void GenerateKeys(PluginManager& pluginManager) {
-    Plugin* plugin = RequireCurrentPlugin(pluginManager);
+void GenerateKeys(std::vector<Plugin>& plugins, int currentPluginIndex) {
+    Plugin* plugin = RequireCurrentPlugin(plugins, currentPluginIndex);
 
     std::string publicKey;
     std::string privateKey;
 
-    plugin->generateKeys(publicKey, privateKey);
+    GenerateKeysByPlugin(plugin, publicKey, privateKey);
     PrintGeneratedKeys(plugin, publicKey, privateKey);
 }
 
-void EncryptText(PluginManager& pluginManager) {
-    Plugin* plugin = RequireCurrentPlugin(pluginManager);
+void EncryptText(std::vector<Plugin>& plugins, int currentPluginIndex) {
+    Plugin* plugin = RequireCurrentPlugin(plugins, currentPluginIndex);
 
     std::string text = ReadLine("Введите текст: ");
     std::string keyInput = ReadLine(GetKeyMessage(plugin, true));
     std::string key = PrepareKey(plugin, keyInput);
 
-    std::vector<uint8_t> encrypted = plugin->encrypt(StringToBytes(text), key);
+    std::vector<uint8_t> encrypted = EncryptByPlugin(plugin, StringToBytes(text), key);
 
     std::string visibleCipherText;
 
@@ -257,8 +267,8 @@ void EncryptText(PluginManager& pluginManager) {
     std::cout << "Зашифрованный текст: " << visibleCipherText << '\n';
 }
 
-void DecryptText(PluginManager& pluginManager) {
-    Plugin* plugin = RequireCurrentPlugin(pluginManager);
+void DecryptText(std::vector<Plugin>& plugins, int currentPluginIndex) {
+    Plugin* plugin = RequireCurrentPlugin(plugins, currentPluginIndex);
 
     std::string cipherText = ReadLine("Введите зашифрованный текст: ");
     std::string keyInput = ReadLine(GetKeyMessage(plugin, false));
@@ -272,13 +282,13 @@ void DecryptText(PluginManager& pluginManager) {
         encrypted = StringToBytes(cipherText);
     }
 
-    std::vector<uint8_t> decrypted = plugin->decrypt(encrypted, key);
+    std::vector<uint8_t> decrypted = DecryptByPlugin(plugin, encrypted, key);
 
     std::cout << "Расшифрованный текст: " << BytesToString(decrypted) << '\n';
 }
 
-void EncryptFile(PluginManager& pluginManager) {
-    Plugin* plugin = RequireCurrentPlugin(pluginManager);
+void EncryptFile(std::vector<Plugin>& plugins, int currentPluginIndex) {
+    Plugin* plugin = RequireCurrentPlugin(plugins, currentPluginIndex);
 
     std::string inputPath = ReadLine("Введите путь к исходному файлу: ");
     std::string outputPath = ReadLine("Введите путь для сохранения: ");
@@ -286,15 +296,15 @@ void EncryptFile(PluginManager& pluginManager) {
     std::string key = PrepareKey(plugin, keyInput);
 
     std::vector<uint8_t> data = file_manager::read_file(inputPath);
-    std::vector<uint8_t> encrypted = plugin->encrypt(data, key);
+    std::vector<uint8_t> encrypted = EncryptByPlugin(plugin, data, key);
     file_manager::write_file(outputPath, encrypted);
 
     std::cout << "Файл успешно зашифрован.\n";
     std::cout << "Путь к результату: " << outputPath << '\n';
 }
 
-void DecryptFile(PluginManager& pluginManager) {
-    Plugin* plugin = RequireCurrentPlugin(pluginManager);
+void DecryptFile(std::vector<Plugin>& plugins, int currentPluginIndex) {
+    Plugin* plugin = RequireCurrentPlugin(plugins, currentPluginIndex);
 
     std::string inputPath = ReadLine("Введите путь к исходному файлу: ");
     std::string outputPath = ReadLine("Введите путь для сохранения: ");
@@ -302,7 +312,7 @@ void DecryptFile(PluginManager& pluginManager) {
     std::string key = PrepareKey(plugin, keyInput);
 
     std::vector<uint8_t> data = file_manager::read_file(inputPath);
-    std::vector<uint8_t> decrypted = plugin->decrypt(data, key);
+    std::vector<uint8_t> decrypted = DecryptByPlugin(plugin, data, key);
     file_manager::write_file(outputPath, decrypted);
 
     std::cout << "Файл успешно расшифрован.\n";
@@ -315,45 +325,45 @@ int main() {
     }
 
     const std::string pluginsDirectory = "./plagins";
-    PluginManager pluginManager;
-    pluginManager.loadFromDirectory(pluginsDirectory);
+    std::vector<Plugin> plugins = LoadPluginsFromDirectory(pluginsDirectory);
+    int currentPluginIndex = -1;
 
-    if (pluginManager.empty()) {
+    if (!HasPlugins(plugins)) {
         std::cout << "Плагины не найдены. Скомпилируйте .so файлы в папку plagins.\n";
     } else {
-        std::cout << "Загружено плагинов: " << pluginManager.count() << '\n';
+        std::cout << "Загружено плагинов: " << GetPluginsCount(plugins) << '\n';
     }
 
     bool running = true;
 
     while (running) {
-        PrintMenu(pluginManager.currentPlugin());
+        PrintMenu(GetCurrentPlugin(plugins, currentPluginIndex));
         MenuCommand command = ToMenuCommand(ReadInt());
 
         try {
             switch (command) {
                 case MenuCommand::SelectAlgorithm:
-                    SelectAlgorithm(pluginManager);
+                    SelectAlgorithm(plugins, currentPluginIndex);
                     break;
 
                 case MenuCommand::GenerateKeys:
-                    GenerateKeys(pluginManager);
+                    GenerateKeys(plugins, currentPluginIndex);
                     break;
 
                 case MenuCommand::EncryptText:
-                    EncryptText(pluginManager);
+                    EncryptText(plugins, currentPluginIndex);
                     break;
 
                 case MenuCommand::DecryptText:
-                    DecryptText(pluginManager);
+                    DecryptText(plugins, currentPluginIndex);
                     break;
 
                 case MenuCommand::EncryptFile:
-                    EncryptFile(pluginManager);
+                    EncryptFile(plugins, currentPluginIndex);
                     break;
 
                 case MenuCommand::DecryptFile:
-                    DecryptFile(pluginManager);
+                    DecryptFile(plugins, currentPluginIndex);
                     break;
 
                 case MenuCommand::Exit:
@@ -371,5 +381,6 @@ int main() {
         }
     }
 
+    UnloadAllPlugins(plugins);
     return 0;
 }

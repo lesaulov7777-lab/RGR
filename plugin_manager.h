@@ -7,53 +7,35 @@
 
 #include "crypto_interface.h"
 
-class Plugin {
-public:
-    Plugin() = default;
-    ~Plugin();
+struct Plugin {
+    void* handle = nullptr;
 
-    Plugin(const Plugin&) = delete;
-    Plugin& operator=(const Plugin&) = delete;
+    std::string filename;
+    std::string name;
 
-    Plugin(Plugin&& other) noexcept;
-    Plugin& operator=(Plugin&& other) noexcept;
-
-    bool load(const std::string& path);
-    void unload();
-
-    const std::string& filename() const;
-    const std::string& name() const;
-
-    std::vector<uint8_t> encrypt(const std::vector<uint8_t>& data, const std::string& key) const;
-    std::vector<uint8_t> decrypt(const std::vector<uint8_t>& data, const std::string& key) const;
-    void generateKeys(std::string& publicKey, std::string& privateKey) const;
-
-private:
-    void* handle_ = nullptr;
-    std::string filename_;
-    std::string name_;
-    EncryptFunc encrypt_ = nullptr;
-    DecryptFunc decrypt_ = nullptr;
-    GetNameFunc getName_ = nullptr;
-    GenerateKeysFunc generateKeys_ = nullptr;
+    EncryptFunc encrypt = nullptr;
+    DecryptFunc decrypt = nullptr;
+    GetNameFunc getName = nullptr;
+    GenerateKeysFunc generateKeys = nullptr;
 };
 
-class PluginManager {
-public:
-    void loadFromDirectory(const std::string& directory);
+bool LoadPlugin(Plugin& plugin, const std::string& path);
+void UnloadPlugin(Plugin& plugin);
 
-    bool empty() const;
-    std::size_t count() const;
+std::vector<Plugin> LoadPluginsFromDirectory(const std::string& directory);
+void UnloadAllPlugins(std::vector<Plugin>& plugins);
 
-    void printAvailablePlugins() const;
-    bool selectPlugin(std::size_t numberFromMenu);
+bool HasPlugins(const std::vector<Plugin>& plugins);
+std::size_t GetPluginsCount(const std::vector<Plugin>& plugins);
 
-    Plugin* currentPlugin();
-    const Plugin* currentPlugin() const;
+void PrintAvailablePlugins(const std::vector<Plugin>& plugins);
+bool SelectPlugin(const std::vector<Plugin>& plugins, int& currentPluginIndex, std::size_t numberFromMenu);
 
-private:
-    std::vector<Plugin> plugins_;
-    int currentIndex_ = -1;
-};
+Plugin* GetCurrentPlugin(std::vector<Plugin>& plugins, int currentPluginIndex);
+const Plugin* GetCurrentPlugin(const std::vector<Plugin>& plugins, int currentPluginIndex);
+
+std::vector<uint8_t> EncryptByPlugin(const Plugin* plugin, const std::vector<uint8_t>& data, const std::string& key);
+std::vector<uint8_t> DecryptByPlugin(const Plugin* plugin, const std::vector<uint8_t>& data, const std::string& key);
+void GenerateKeysByPlugin(const Plugin* plugin, std::string& publicKey, std::string& privateKey);
 
 #endif
