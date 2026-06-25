@@ -101,21 +101,33 @@ namespace {
         return std::vector<uint8_t>(data.begin(), data.end() - padding);
     }
 
+    char RandomKeySymbol(std::mt19937& gen) {
+        std::uniform_int_distribution<int> typeDist(0, 2);
+        int type = typeDist(gen);
+
+        if (type == 0) {
+            std::uniform_int_distribution<int> dist('a', 'z');
+            return static_cast<char>(dist(gen));
+        }
+
+        if (type == 1) {
+            std::uniform_int_distribution<int> dist('A', 'Z');
+            return static_cast<char>(dist(gen));
+        }
+
+        std::uniform_int_distribution<int> dist('0', '9');
+        return static_cast<char>(dist(gen));
+    }
+
     std::string RandomString(std::size_t length) {
         static std::random_device rd;
         static std::mt19937 gen(rd());
 
-        const std::string symbols =
-            "abcdefghijklmnopqrstuvwxyz"
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-            "0123456789";
-
-        std::uniform_int_distribution<std::size_t> dist(0, symbols.size() - 1);
         std::string result;
         result.reserve(length);
 
         for (std::size_t i = 0; i < length; ++i) {
-            result.push_back(symbols[dist(gen)]);
+            result.push_back(RandomKeySymbol(gen));
         }
 
         return result;

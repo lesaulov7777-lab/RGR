@@ -1,7 +1,6 @@
 #include "crypto_interface.h"
 
 #include <cstdint>
-#include <cstdlib>
 #include <numeric>
 #include <random>
 #include <sstream>
@@ -10,11 +9,6 @@
 #include <vector>
 
 namespace {
-    const std::string RUS_UPPER = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
-    const std::string RUS_LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
-    const std::string LATIN_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const std::string LATIN_LOWER = "abcdefghijklmnopqrstuvwxyz";
-
     enum class AlphabetType {
         None,
         Latin,
@@ -55,38 +49,84 @@ namespace {
         return symbols;
     }
 
-    int FindIndex(const std::string& alphabet, const std::string& symbol) {
-        int index = 0;
+    char32_t DecodeUtf8(const std::string& symbol) {
+        if (symbol.empty()) {
+            return 0;
+        }
 
-        for (std::size_t i = 0; i < alphabet.size();) {
-            std::size_t len = Utf8CharLength(static_cast<unsigned char>(alphabet[i]));
+        const unsigned char* bytes = reinterpret_cast<const unsigned char*>(symbol.data());
 
-            if (alphabet.substr(i, len) == symbol) {
-                return index;
-            }
+        if (symbol.size() == 1) {
+            return bytes[0];
+        }
 
-            i += len;
-            ++index;
+        if (symbol.size() == 2) {
+            return (static_cast<char32_t>(bytes[0] & 31) << 6) |
+                   static_cast<char32_t>(bytes[1] & 63);
+        }
+
+        if (symbol.size() == 3) {
+            return (static_cast<char32_t>(bytes[0] & 15) << 12) |
+                   (static_cast<char32_t>(bytes[1] & 63) << 6) |
+                   static_cast<char32_t>(bytes[2] & 63);
+        }
+
+        if (symbol.size() == 4) {
+            return (static_cast<char32_t>(bytes[0] & 7) << 18) |
+                   (static_cast<char32_t>(bytes[1] & 63) << 12) |
+                   (static_cast<char32_t>(bytes[2] & 63) << 6) |
+                   static_cast<char32_t>(bytes[3] & 63);
+        }
+
+        return 0;
+    }
+
+    std::string EncodeUtf8(char32_t code) {
+        std::string result;
+
+        if (code <= 0x7F) {
+            result.push_back(static_cast<char>(code));
+            return result;
+        }
+
+        if (code <= 0x7FF) {
+            result.push_back(static_cast<char>(0xC0 | (code >> 6)));
+            result.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+            return result;
+        }
+
+        if (code <= 0xFFFF) {
+            result.push_back(static_cast<char>(0xE0 | (code >> 12)));
+            result.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+            result.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+            return result;
+        }
+
+        result.push_back(static_cast<char>(0xF0 | (code >> 18)));
+        result.push_back(static_cast<char>(0x80 | ((code >> 12) & 0x3F)));
+        result.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+        result.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+        return result;
+    }
+
+    int RussianIndex(char32_t code, bool upper) {
+        char32_t start = upper ? 0x0410 : 0x0430;
+        char32_t end = upper ? 0x042F : 0x044F;
+        char32_t yo = upper ? 0x0401 : 0x0451;
+
+        if (code == yo) {
+            return 6;
+        }
+
+        if (code >= start && code <= start + 5) {
+            return static_cast<int>(code - start);
+        }
+
+        if (code >= start + 6 && code <= end) {
+            return static_cast<int>(code - start + 1);
         }
 
         return -1;
-    }
-
-    std::string CharByIndex(const std::string& alphabet, int index) {
-        int currentIndex = 0;
-
-        for (std::size_t i = 0; i < alphabet.size();) {
-            std::size_t len = Utf8CharLength(static_cast<unsigned char>(alphabet[i]));
-
-            if (currentIndex == index) {
-                return alphabet.substr(i, len);
-            }
-
-            i += len;
-            ++currentIndex;
-        }
-
-        return "";
     }
 
     int PositiveMod(int value, int mod) {
@@ -111,7 +151,6 @@ namespace {
 
     Matrix2x2 ParseKey(const std::string& key) {
         std::istringstream stream(key);
-
         Matrix2x2 matrix{};
 
         if (!(stream >> matrix.a >> matrix.b >> matrix.c >> matrix.d)) {
@@ -140,7 +179,6 @@ namespace {
         int invDet = ModInverse(det, mod);
 
         Matrix2x2 inverse{};
-
         inverse.a = PositiveMod(invDet * matrix.d, mod);
         inverse.b = PositiveMod(invDet * (-matrix.b), mod);
         inverse.c = PositiveMod(invDet * (-matrix.c), mod);
@@ -150,22 +188,22 @@ namespace {
     }
 
     SymbolInfo GetSymbolInfo(const std::string& symbol) {
-        int index = FindIndex(LATIN_UPPER, symbol);
-        if (index >= 0) {
-            return {symbol, AlphabetType::Latin, true, index};
+        char32_t code = DecodeUtf8(symbol);
+
+        if (code >= static_cast<char32_t>('A') && code <= static_cast<char32_t>('Z')) {
+            return {symbol, AlphabetType::Latin, true, static_cast<int>(code - static_cast<char32_t>('A'))};
         }
 
-        index = FindIndex(LATIN_LOWER, symbol);
-        if (index >= 0) {
-            return {symbol, AlphabetType::Latin, false, index};
+        if (code >= static_cast<char32_t>('a') && code <= static_cast<char32_t>('z')) {
+            return {symbol, AlphabetType::Latin, false, static_cast<int>(code - static_cast<char32_t>('a'))};
         }
 
-        index = FindIndex(RUS_UPPER, symbol);
+        int index = RussianIndex(code, true);
         if (index >= 0) {
             return {symbol, AlphabetType::Russian, true, index};
         }
 
-        index = FindIndex(RUS_LOWER, symbol);
+        index = RussianIndex(code, false);
         if (index >= 0) {
             return {symbol, AlphabetType::Russian, false, index};
         }
@@ -175,19 +213,23 @@ namespace {
 
     std::string MakeSymbol(AlphabetType type, bool upper, int index) {
         if (type == AlphabetType::Latin) {
-            if (upper) {
-                return CharByIndex(LATIN_UPPER, index);
-            }
-
-            return CharByIndex(LATIN_LOWER, index);
+            char32_t start = upper ? static_cast<char32_t>('A') : static_cast<char32_t>('a');
+            return EncodeUtf8(start + static_cast<char32_t>(index));
         }
 
         if (type == AlphabetType::Russian) {
-            if (upper) {
-                return CharByIndex(RUS_UPPER, index);
+            char32_t start = upper ? 0x0410 : 0x0430;
+            char32_t yo = upper ? 0x0401 : 0x0451;
+
+            if (index == 6) {
+                return EncodeUtf8(yo);
             }
 
-            return CharByIndex(RUS_LOWER, index);
+            if (index < 6) {
+                return EncodeUtf8(start + static_cast<char32_t>(index));
+            }
+
+            return EncodeUtf8(start + static_cast<char32_t>(index - 1));
         }
 
         return "";

@@ -6,11 +6,6 @@
 #include <vector>
 
 namespace {
-    const std::string BASE64_ALPHABET =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789+/";
-
     std::vector<uint8_t> OtpProcess(const std::vector<uint8_t>& data, const std::string& key) {
         if (key.empty()) {
             throw std::invalid_argument("Ключ OTP не должен быть пустым");
@@ -43,27 +38,21 @@ namespace {
         return result;
     }
 
-    std::string BytesToBase64(const std::vector<uint8_t>& data) {
+    char ToHexDigit(uint8_t value) {
+        if (value < 10) {
+            return static_cast<char>('0' + value);
+        }
+
+        return static_cast<char>('A' + value - 10);
+    }
+
+    std::string BytesToHex(const std::vector<uint8_t>& data) {
         std::string result;
-        int value = 0;
-        int bits = -6;
+        result.reserve(data.size() * 2);
 
         for (uint8_t byte : data) {
-            value = (value << 8) + byte;
-            bits += 8;
-
-            while (bits >= 0) {
-                result.push_back(BASE64_ALPHABET[(value >> bits) & 0x3F]);
-                bits -= 6;
-            }
-        }
-
-        if (bits > -6) {
-            result.push_back(BASE64_ALPHABET[((value << 8) >> (bits + 8)) & 0x3F]);
-        }
-
-        while (result.size() % 4 != 0) {
-            result.push_back('=');
+            result.push_back(ToHexDigit(static_cast<uint8_t>(byte >> 4)));
+            result.push_back(ToHexDigit(static_cast<uint8_t>(byte & 15)));
         }
 
         return result;
@@ -76,7 +65,7 @@ extern "C" {
     }
 
     EXPORT_API void generate_keys(std::string& publicKey, std::string& privateKey) {
-        std::string key = BytesToBase64(RandomBytes(1024));
+        std::string key = BytesToHex(RandomBytes(1024));
         publicKey = key;
         privateKey = key;
     }
